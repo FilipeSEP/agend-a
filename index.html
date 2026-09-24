@@ -14,6 +14,9 @@ body{background:var(--bg);color:var(--text);padding:20px;display:flex;justify-co
 header{text-align:center;margin-bottom:24px}
 header h1{font-size:2rem;color:var(--accent);margin-bottom:6px}
 header p{color:var(--muted);font-size:.95rem}
+.sound-btn{margin-top:10px;background:var(--card);border:1px solid var(--border);color:var(--accent);padding:6px 14px;border-radius:20px;cursor:pointer;font-size:.85rem;font-weight:600;transition:all .2s}
+.sound-btn:hover{border-color:var(--accent);background:var(--inset)}
+.sound-btn.active{background:var(--accent);color:var(--on-accent)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .tabs{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 10px;margin-bottom:16px}
 .tab-btn{background:var(--card);border:1px solid var(--border);color:var(--muted);padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:600;white-space:nowrap;transition:all .2s}
@@ -35,11 +38,14 @@ header p{color:var(--muted);font-size:.95rem}
 .item.past .topic{opacity:.6}
 .item.done .topic{text-decoration:line-through;opacity:.6}
 .item.now{outline:2px solid var(--c)}
+.item.soon{outline:2px dashed var(--c)}
 .time{font-size:.85rem;font-weight:700;color:var(--c);display:block}
 .topic{font-weight:600}
 .details{font-size:.85rem;color:var(--muted);display:block;margin-top:2px}
 .badge{display:none;background:var(--c);color:#000;font-size:.7rem;font-weight:700;padding:1px 8px;border-radius:99px;margin-left:8px}
 .item.now .badge{display:inline}
+.badge-soon{display:none;background:transparent;border:1px solid var(--c);color:var(--c);font-size:.7rem;font-weight:700;padding:0 7px;border-radius:99px;margin-left:8px}
+.item.soon .badge-soon{display:inline}
 textarea{width:100%;height:250px;background:var(--inset);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:12px;font-size:.95rem;resize:vertical}
 .save-status{font-size:.8rem;color:var(--muted);margin-top:6px;text-align:right}
 .week{margin-top:20px}
@@ -57,6 +63,7 @@ textarea{width:100%;height:250px;background:var(--inset);border:1px solid var(--
   <header>
     <h1>Agenda de Estudos</h1>
     <p>Foco, consistência e evolução diária.</p>
+    <button id="toggle-sound" class="sound-btn">🔔 Ativar bipes (Sinal Sonoro)</button>
   </header>
   <div class="tabs" id="tabs" role="tablist" aria-label="Dias da semana"></div>
   <div id="panels"></div>
@@ -73,7 +80,74 @@ textarea{width:100%;height:250px;background:var(--inset);border:1px solid var(--
 </div>
 
 <script>
+// ===== Preferência de som (lembrada entre visitas) =====
+const mem = {};
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return k in mem ? mem[k] : null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){ mem[k] = v; } },
+  del(k){ try { localStorage.removeItem(k); } catch(e){ delete mem[k]; } },
+  keys(){ try { return Object.keys(localStorage); } catch(e){ return Object.keys(mem); } }
+};
+
+// ===== Sistema de Áudio (Bipe) =====
+let audioCtx = null;
+let soundEnabled = store.get('sound_enabled') === '1';
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+function playTone(freq, when, dur) {
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime + when);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime + when);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + when + dur);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(audioCtx.currentTime + when);
+    osc.stop(audioCtx.currentTime + when + dur);
+  } catch(e) {}
+}
+
+// 3 bipes: fim de bloco (Lá, 880Hz)
+function playEndBeep() {
+  if (!soundEnabled) return;
+  initAudio();
+  [0, 0.2, 0.4].forEach(t => playTone(880, t, 0.15));
+}
+
+// 1 bipe mais grave: aviso de X min antes do fim (Mi, 659Hz)
+function playWarnBeep() {
+  if (!soundEnabled) return;
+  initAudio();
+  playTone(659, 0, 0.2);
+}
+
+const soundBtn = document.getElementById('toggle-sound');
+function paintSoundBtn() {
+  soundBtn.classList.toggle('active', soundEnabled);
+  soundBtn.textContent = soundEnabled ? '🔔 Bipes Ativados' : '🔕 Ativar bipes (Sinal Sonoro)';
+}
+soundBtn.addEventListener('click', () => {
+  initAudio();
+  soundEnabled = !soundEnabled;
+  store.set('sound_enabled', soundEnabled ? '1' : '0');
+  paintSoundBtn();
+  if (soundEnabled) playEndBeep(); // bipe de teste ao ativar
+});
+paintSoundBtn();
+
 // ===== Dados (para mudar um horário, edite só uma linha aqui) =====
+const WARN_MIN = 5; // avisa X minutos antes do fim de cada bloco
+
 const SUBJECTS = {
   java: { name: 'Java & POO',       color: '#f59e0b' },
   az:   { name: 'Azure (Cloud)',    color: '#38bdf8' },
@@ -117,15 +191,6 @@ const DAYS = [
   ]}
 ];
 
-// ===== Armazenamento seguro (localStorage pode falhar em modo anônimo/iframe) =====
-const mem = {};
-const store = {
-  get(k){ try { return localStorage.getItem(k); } catch(e){ return k in mem ? mem[k] : null; } },
-  set(k,v){ try { localStorage.setItem(k,v); } catch(e){ mem[k] = v; } },
-  del(k){ try { localStorage.removeItem(k); } catch(e){ delete mem[k]; } },
-  keys(){ try { return Object.keys(localStorage); } catch(e){ return Object.keys(mem); } }
-};
-
 // ===== Datas: cada aba representa o dia real da semana atual (domingo abre a próxima semana) =====
 const realNow = new Date();
 const base = new Date(realNow);
@@ -149,7 +214,7 @@ DAYS.forEach(day => {
     const s = SUBJECTS[b[2]];
     return `<li class="item ${done.includes(i) ? 'done' : ''}" style="--c:${s.color}" data-start="${b[0]}" data-end="${b[1]}">
       <input type="checkbox" data-i="${i}" ${done.includes(i) ? 'checked' : ''} aria-label="Concluir ${b[4] || s.name}">
-      <div><span class="time">${b[0]} - ${b[1]}<span class="badge">agora</span></span>
+      <div><span class="time">${b[0]} - ${b[1]}<span class="badge">agora</span><span class="badge-soon">faltam ${WARN_MIN} min</span></span>
       <span class="topic">${b[4] || s.name}</span><span class="details">${b[3]}</span></div></li>`;
   }).join('');
 
@@ -193,24 +258,51 @@ tabsEl.addEventListener('keydown', e => {
   else if (e.key === 'ArrowLeft') show(ids[(cur + ids.length - 1) % ids.length], true);
 });
 
-// ===== Progresso, bloco atual e checklist =====
+// ===== Progresso, bloco atual/próximo do fim, e bipes =====
 function updateProgress(panel) {
   const boxes = panel.querySelectorAll('input[type=checkbox]');
   const n = [...boxes].filter(b => b.checked).length;
   panel.querySelector('.progress span').textContent = `${n} de ${boxes.length} blocos concluídos`;
   panel.querySelector('.bar i').style.width = (n / boxes.length * 100) + '%';
 }
+
+const alertedEnd = new Set();
+const alertedWarn = new Set();
+const msg = document.getElementById('msg');
+
 function paintNow() {
   const d = new Date(), min = d.getHours()*60 + d.getMinutes();
+
   DAYS.forEach(day => {
     if (day.date !== todayStr) return;
     document.querySelectorAll(`#${day.id} .item`).forEach(li => {
       const s = toMin(li.dataset.start), e = toMin(li.dataset.end);
-      li.classList.toggle('now', min >= s && min < e);
-      li.classList.toggle('past', min >= e);
+      const isNow = min >= s && min < e;
+      const isPast = min >= e;
+      const isSoon = isNow && (e - min) <= WARN_MIN && (e - min) > 0;
+
+      li.classList.toggle('now', isNow);
+      li.classList.toggle('past', isPast);
+      li.classList.toggle('soon', isSoon);
+
+      const topic = li.querySelector('.topic').textContent;
+      const warnId = `${day.date}_${li.dataset.end}_warn`;
+      const endId = `${day.date}_${li.dataset.end}_end`;
+
+      if (isSoon && !alertedWarn.has(warnId)) {
+        alertedWarn.add(warnId);
+        playWarnBeep();
+        msg.textContent = `⏳ Faltam ${WARN_MIN} min para o fim de: ${topic}`;
+      }
+      if (min === e && !alertedEnd.has(endId)) {
+        alertedEnd.add(endId);
+        playEndBeep();
+        msg.textContent = `⏰ Tempo esgotado para: ${topic}!`;
+      }
     });
   });
 }
+
 DAYS.forEach(day => {
   const panel = document.getElementById(day.id);
   panel.addEventListener('change', e => {
@@ -232,7 +324,7 @@ DAYS.forEach(day => {
   });
 });
 paintNow();
-setInterval(paintNow, 60000);
+setInterval(paintNow, 10000); // checa a cada 10s para não perder o minuto exato do aviso/fim
 
 // ===== Resumo semanal =====
 const totals = {};
@@ -242,11 +334,10 @@ document.getElementById('week').innerHTML = Object.keys(SUBJECTS).map(k => {
   return `<li style="--c:${SUBJECTS[k].color}"><b>${Math.floor(m/60)}h${m%60 ? String(m%60).padStart(2,'0') : ''}</b>${SUBJECTS[k].name}</li>`;
 }).join('');
 
-// ===== Backup (exportar/importar notas e checklists) =====
-const msg = document.getElementById('msg');
+// ===== Backup (exportar/importar notas, checklists e preferência de som) =====
 document.getElementById('export').addEventListener('click', () => {
   const data = {};
-  store.keys().filter(k => /^(note|done)_/.test(k)).forEach(k => data[k] = store.get(k));
+  store.keys().filter(k => /^(note|done)_/.test(k) || k === 'sound_enabled').forEach(k => data[k] = store.get(k));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   a.download = `agenda-backup-${todayStr}.json`;
@@ -260,7 +351,7 @@ document.getElementById('file').addEventListener('change', e => {
   if (!f) return;
   f.text().then(txt => {
     const data = JSON.parse(txt);
-    Object.keys(data).filter(k => /^(note|done)_/.test(k)).forEach(k => store.set(k, String(data[k])));
+    Object.keys(data).filter(k => /^(note|done)_/.test(k) || k === 'sound_enabled').forEach(k => store.set(k, String(data[k])));
     msg.textContent = 'Backup importado. Recarregando...';
     setTimeout(() => location.reload(), 600);
   }).catch(() => { msg.textContent = 'Arquivo inválido. Use um backup exportado por esta página.'; });
