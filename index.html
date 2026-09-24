@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f172a">
+<title>Agenda de Estudos</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--accent:#38bdf8;--on-accent:#000;--text:#f8fafc;--muted:#94a3b8;--border:#334155;--inset:#0f172a}
+@media (prefers-color-scheme:light){:root{--bg:#f1f5f9;--card:#fff;--accent:#0369a1;--on-accent:#fff;--text:#0f172a;--muted:#475569;--border:#cbd5e1;--inset:#f1f5f9}}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif}
+body{background:var(--bg);color:var(--text);padding:20px;display:flex;justify-content:center}
+.container{width:100%;max-width:900px}
+header{text-align:center;margin-bottom:24px}
+header h1{font-size:2rem;color:var(--accent);margin-bottom:6px}
+header p{color:var(--muted);font-size:.95rem}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tabs{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 10px;margin-bottom:16px}
+.tab-btn{background:var(--card);border:1px solid var(--border);color:var(--muted);padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:600;white-space:nowrap;transition:all .2s}
+.tab-btn:hover{border-color:var(--accent);color:var(--text)}
+.tab-btn[aria-selected=true]{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.tab-btn.today::after{content:" •"}
+.day-content{display:none;gap:20px;grid-template-columns:1fr}
+.day-content.active{display:grid}
+@media(min-width:768px){.day-content{grid-template-columns:3fr 2fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+.card h2{font-size:1.15rem;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:12px}
+.date{color:var(--muted);font-size:.85rem;font-weight:400}
+.progress{margin-bottom:14px;font-size:.8rem;color:var(--muted)}
+.bar{height:6px;background:var(--inset);border-radius:3px;margin-top:4px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.schedule-list{list-style:none;display:flex;flex-direction:column;gap:12px}
+.item{display:flex;gap:12px;align-items:flex-start;background:var(--inset);padding:12px;border-radius:8px;border-left:4px solid var(--c)}
+.item input{margin-top:4px;width:18px;height:18px;accent-color:var(--c);flex:none;cursor:pointer}
+.item.past .topic{opacity:.6}
+.item.done .topic{text-decoration:line-through;opacity:.6}
+.item.now{outline:2px solid var(--c)}
+.time{font-size:.85rem;font-weight:700;color:var(--c);display:block}
+.topic{font-weight:600}
+.details{font-size:.85rem;color:var(--muted);display:block;margin-top:2px}
+.badge{display:none;background:var(--c);color:#000;font-size:.7rem;font-weight:700;padding:1px 8px;border-radius:99px;margin-left:8px}
+.item.now .badge{display:inline}
+textarea{width:100%;height:250px;background:var(--inset);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:12px;font-size:.95rem;resize:vertical}
+.save-status{font-size:.8rem;color:var(--muted);margin-top:6px;text-align:right}
+.week{margin-top:20px}
+.week ul{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.week li{border-left:4px solid var(--c);padding:6px 10px;background:var(--inset);border-radius:6px;font-size:.85rem}
+.week b{display:block;font-size:1.1rem}
+.tools{display:flex;gap:8px;justify-content:center;margin-top:20px;flex-wrap:wrap}
+.tools button{background:var(--card);border:1px solid var(--border);color:var(--muted);padding:8px 14px;border-radius:8px;cursor:pointer}
+.tools button:hover{border-color:var(--accent);color:var(--text)}
+#msg{text-align:center;color:var(--muted);font-size:.8rem;margin-top:8px;min-height:1em}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Agenda de Estudos</h1>
+    <p>Foco, consistência e evolução diária.</p>
+  </header>
+  <div class="tabs" id="tabs" role="tablist" aria-label="Dias da semana"></div>
+  <div id="panels"></div>
+  <section class="card week">
+    <h2>Horas na semana</h2>
+    <ul id="week"></ul>
+  </section>
+  <div class="tools">
+    <button id="export">Exportar backup</button>
+    <button id="import">Importar backup</button>
+    <input type="file" id="file" accept="application/json" hidden>
+  </div>
+  <div id="msg" role="status"></div>
+</div>
+
+<script>
+// ===== Dados (para mudar um horário, edite só uma linha aqui) =====
+const SUBJECTS = {
+  java: { name: 'Java & POO',       color: '#f59e0b' },
+  az:   { name: 'Azure (Cloud)',    color: '#38bdf8' },
+  bi:   { name: 'Power BI & Excel', color: '#84cc16' },
+  en:   { name: 'Inglês',           color: '#c084fc' }
+};
+
+// [início, fim, matéria, detalhes, título opcional]
+const DAYS = [
+  { id: 'seg', label: 'Segunda', dow: 1, blocks: [
+    ['15:00','16:45','java','Foco principal: Lógica, POO, Spring Boot e projetos práticos.'],
+    ['17:00','18:30','az','Conceitos de nuvem, arquitetura e certificação.'],
+    ['18:45','20:00','en','Leitura de documentação, escuta (listening) e vocabulário técnico.']
+  ]},
+  { id: 'ter', label: 'Terça', dow: 2, blocks: [
+    ['15:00','16:45','bi','Modelagem de dados, DAX avançado e tratamento no Power Query.'],
+    ['17:00','18:30','java','Resolução de problemas, algoritmos e refatoração de código.'],
+    ['18:45','20:00','en','Prática de conversação, áudio e escrita técnica.']
+  ]},
+  { id: 'qua', label: 'Quarta', dow: 3, blocks: [
+    ['10:00','12:30','java','Foco em arquitetura, Spring Boot, APIs REST e lógica de backend.'],
+    ['14:00','16:30','az','Implantação de serviços, banco de dados na nuvem e certificação AZ-900/AZ-204.'],
+    ['17:00','18:15','bi','Análise de dados, consultas SQL avançadas e construção de dashboards.'],
+    ['18:15','19:30','en','Leitura de documentação técnica, conversação e áudio.']
+  ]},
+  { id: 'qui', label: 'Quinta', dow: 4, blocks: [
+    ['15:00','16:45','java','Estrutura de dados, manipulação de APIs e banco de dados.'],
+    ['17:00','18:30','az','Laboratórios práticos na plataforma e serviços de backend na nuvem.'],
+    ['18:45','20:00','en','Imersão em vídeos técnicos e artigos da comunidade gringa.']
+  ]},
+  { id: 'sex', label: 'Sexta', dow: 5, blocks: [
+    ['10:00','12:30','bi','Modelagem de dados complexa, DAX, Power Query e relatórios executivos.'],
+    ['14:00','16:30','java','Projetos práticos do zero, testes unitários e refatoração de código.'],
+    ['17:00','18:15','az','Prática com Azure App Services, Docker e integração contínua.'],
+    ['18:15','19:30','en','Imersão em vídeos do YouTube, artigos do Medium e podcast técnico.']
+  ]},
+  { id: 'sab', label: 'Sábado', dow: 6, blocks: [
+    ['08:30','11:30','java','Aplicação real juntando backend em Java e implantação na Azure.','Projeto Prático (Java + Azure)'],
+    ['13:30','15:30','bi','Projeto de portfólio integrando dados e visualizações profissionais.','Análise de Dados (Power BI)'],
+    ['15:45','16:45','en','Revisão semanal completa e prática sem tradução.','Inglês Immersion']
+  ]}
+];
+
+// ===== Armazenamento seguro (localStorage pode falhar em modo anônimo/iframe) =====
+const mem = {};
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return k in mem ? mem[k] : null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){ mem[k] = v; } },
+  del(k){ try { localStorage.removeItem(k); } catch(e){ delete mem[k]; } },
+  keys(){ try { return Object.keys(localStorage); } catch(e){ return Object.keys(mem); } }
+};
+
+// ===== Datas: cada aba representa o dia real da semana atual (domingo abre a próxima semana) =====
+const realNow = new Date();
+const base = new Date(realNow);
+if (base.getDay() === 0) base.setDate(base.getDate() + 1);
+const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const dateOf = dow => { const d = new Date(base); d.setDate(d.getDate() + dow - (base.getDay() || 7)); return d; };
+const todayStr = iso(realNow);
+const toMin = t => { const [h,m] = t.split(':').map(Number); return h*60 + m; };
+const fmtDate = d => d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
+
+const tabsEl = document.getElementById('tabs');
+const panelsEl = document.getElementById('panels');
+
+// ===== Renderização =====
+DAYS.forEach(day => {
+  day.date = iso(dateOf(day.dow));
+  const first = day.blocks[0][0], last = day.blocks[day.blocks.length-1][1];
+  const done = JSON.parse(store.get('done_' + day.date) || '[]');
+
+  const items = day.blocks.map((b, i) => {
+    const s = SUBJECTS[b[2]];
+    return `<li class="item ${done.includes(i) ? 'done' : ''}" style="--c:${s.color}" data-start="${b[0]}" data-end="${b[1]}">
+      <input type="checkbox" data-i="${i}" ${done.includes(i) ? 'checked' : ''} aria-label="Concluir ${b[4] || s.name}">
+      <div><span class="time">${b[0]} - ${b[1]}<span class="badge">agora</span></span>
+      <span class="topic">${b[4] || s.name}</span><span class="details">${b[3]}</span></div></li>`;
+  }).join('');
+
+  // migra a nota antiga (por dia da semana) para a chave por data, uma única vez
+  const old = store.get('note_' + day.id);
+  if (old !== null && store.get('note_' + day.date) === null) { store.set('note_' + day.date, old); store.del('note_' + day.id); }
+  const note = store.get('note_' + day.date) || '';
+
+  tabsEl.insertAdjacentHTML('beforeend',
+    `<button class="tab-btn ${day.date === todayStr ? 'today' : ''}" role="tab" id="tab-${day.id}" aria-controls="${day.id}" data-day="${day.id}">${day.label}</button>`);
+  panelsEl.insertAdjacentHTML('beforeend',
+    `<div id="${day.id}" class="day-content" role="tabpanel" aria-labelledby="tab-${day.id}">
+      <div class="card">
+        <h2>Cronograma (${first} às ${last}) <span class="date">${fmtDate(dateOf(day.dow))}</span></h2>
+        <div class="progress"><span></span><div class="bar"><i></i></div></div>
+        <ul class="schedule-list">${items}</ul>
+      </div>
+      <div class="card">
+        <h2>Anotações do Dia</h2>
+        <textarea placeholder="Escreva aqui suas anotações, links ou dúvidas...">${note.replace(/</g,'&lt;')}</textarea>
+        <div class="save-status">Salvo automaticamente</div>
+      </div>
+    </div>`);
+});
+
+// ===== Abas =====
+function show(id, focus) {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const on = b.dataset.day === id;
+    b.setAttribute('aria-selected', on);
+    b.tabIndex = on ? 0 : -1;
+    if (on && focus) b.focus();
+  });
+  document.querySelectorAll('.day-content').forEach(p => p.classList.toggle('active', p.id === id));
+  try { history.replaceState(null, '', '#' + id); } catch(e) {}
+}
+tabsEl.addEventListener('click', e => { const b = e.target.closest('.tab-btn'); if (b) show(b.dataset.day); });
+tabsEl.addEventListener('keydown', e => {
+  const ids = DAYS.map(d => d.id), cur = ids.indexOf(document.querySelector('.tab-btn[aria-selected=true]').dataset.day);
+  if (e.key === 'ArrowRight') show(ids[(cur + 1) % ids.length], true);
+  else if (e.key === 'ArrowLeft') show(ids[(cur + ids.length - 1) % ids.length], true);
+});
+
+// ===== Progresso, bloco atual e checklist =====
+function updateProgress(panel) {
+  const boxes = panel.querySelectorAll('input[type=checkbox]');
+  const n = [...boxes].filter(b => b.checked).length;
+  panel.querySelector('.progress span').textContent = `${n} de ${boxes.length} blocos concluídos`;
+  panel.querySelector('.bar i').style.width = (n / boxes.length * 100) + '%';
+}
+function paintNow() {
+  const d = new Date(), min = d.getHours()*60 + d.getMinutes();
+  DAYS.forEach(day => {
+    if (day.date !== todayStr) return;
+    document.querySelectorAll(`#${day.id} .item`).forEach(li => {
+      const s = toMin(li.dataset.start), e = toMin(li.dataset.end);
+      li.classList.toggle('now', min >= s && min < e);
+      li.classList.toggle('past', min >= e);
+    });
+  });
+}
+DAYS.forEach(day => {
+  const panel = document.getElementById(day.id);
+  panel.addEventListener('change', e => {
+    if (e.target.type !== 'checkbox') return;
+    e.target.closest('.item').classList.toggle('done', e.target.checked);
+    const done = [...panel.querySelectorAll('input[type=checkbox]')].map((b, i) => b.checked ? i : -1).filter(i => i >= 0);
+    store.set('done_' + day.date, JSON.stringify(done));
+    updateProgress(panel);
+  });
+  updateProgress(panel);
+
+  // notas com debounce
+  const ta = panel.querySelector('textarea'), status = panel.querySelector('.save-status');
+  let t;
+  ta.addEventListener('input', () => {
+    status.textContent = 'Salvando...';
+    clearTimeout(t);
+    t = setTimeout(() => { store.set('note_' + day.date, ta.value); status.textContent = 'Salvo automaticamente'; }, 400);
+  });
+});
+paintNow();
+setInterval(paintNow, 60000);
+
+// ===== Resumo semanal =====
+const totals = {};
+DAYS.forEach(d => d.blocks.forEach(b => totals[b[2]] = (totals[b[2]] || 0) + toMin(b[1]) - toMin(b[0])));
+document.getElementById('week').innerHTML = Object.keys(SUBJECTS).map(k => {
+  const m = totals[k] || 0;
+  return `<li style="--c:${SUBJECTS[k].color}"><b>${Math.floor(m/60)}h${m%60 ? String(m%60).padStart(2,'0') : ''}</b>${SUBJECTS[k].name}</li>`;
+}).join('');
+
+// ===== Backup (exportar/importar notas e checklists) =====
+const msg = document.getElementById('msg');
+document.getElementById('export').addEventListener('click', () => {
+  const data = {};
+  store.keys().filter(k => /^(note|done)_/.test(k)).forEach(k => data[k] = store.get(k));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  a.download = `agenda-backup-${todayStr}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  msg.textContent = 'Backup exportado.';
+});
+document.getElementById('import').addEventListener('click', () => document.getElementById('file').click());
+document.getElementById('file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  f.text().then(txt => {
+    const data = JSON.parse(txt);
+    Object.keys(data).filter(k => /^(note|done)_/.test(k)).forEach(k => store.set(k, String(data[k])));
+    msg.textContent = 'Backup importado. Recarregando...';
+    setTimeout(() => location.reload(), 600);
+  }).catch(() => { msg.textContent = 'Arquivo inválido. Use um backup exportado por esta página.'; });
+});
+
+// ===== Aba inicial: hash da URL > dia de hoje > segunda =====
+const hash = location.hash.slice(1);
+const todayDay = DAYS.find(d => d.date === todayStr);
+show(DAYS.some(d => d.id === hash) ? hash : (todayDay ? todayDay.id : 'seg'));
+</script>
+</body>
+</html>
