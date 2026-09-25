@@ -38,14 +38,11 @@ header p{color:var(--muted);font-size:.95rem}
 .item.past .topic{opacity:.6}
 .item.done .topic{text-decoration:line-through;opacity:.6}
 .item.now{outline:2px solid var(--c)}
-.item.soon{outline:2px dashed var(--c)}
 .time{font-size:.85rem;font-weight:700;color:var(--c);display:block}
 .topic{font-weight:600}
 .details{font-size:.85rem;color:var(--muted);display:block;margin-top:2px}
 .badge{display:none;background:var(--c);color:#000;font-size:.7rem;font-weight:700;padding:1px 8px;border-radius:99px;margin-left:8px}
 .item.now .badge{display:inline}
-.badge-soon{display:none;background:transparent;border:1px solid var(--c);color:var(--c);font-size:.7rem;font-weight:700;padding:0 7px;border-radius:99px;margin-left:8px}
-.item.soon .badge-soon{display:inline}
 textarea{width:100%;height:250px;background:var(--inset);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:12px;font-size:.95rem;resize:vertical}
 .save-status{font-size:.8rem;color:var(--muted);margin-top:6px;text-align:right}
 .week{margin-top:20px}
@@ -80,18 +77,9 @@ textarea{width:100%;height:250px;background:var(--inset);border:1px solid var(--
 </div>
 
 <script>
-// ===== Preferência de som (lembrada entre visitas) =====
-const mem = {};
-const store = {
-  get(k){ try { return localStorage.getItem(k); } catch(e){ return k in mem ? mem[k] : null; } },
-  set(k,v){ try { localStorage.setItem(k,v); } catch(e){ mem[k] = v; } },
-  del(k){ try { localStorage.removeItem(k); } catch(e){ delete mem[k]; } },
-  keys(){ try { return Object.keys(localStorage); } catch(e){ return Object.keys(mem); } }
-};
-
 // ===== Sistema de Áudio (Bipe) =====
 let audioCtx = null;
-let soundEnabled = store.get('sound_enabled') === '1';
+let soundEnabled = false;
 
 function initAudio() {
   if (!audioCtx) {
@@ -102,65 +90,51 @@ function initAudio() {
   }
 }
 
-function playTone(freq, when, dur) {
-  try {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime + when);
-    gain.gain.setValueAtTime(0.1, audioCtx.currentTime + when);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + when + dur);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start(audioCtx.currentTime + when);
-    osc.stop(audioCtx.currentTime + when + dur);
-  } catch(e) {}
-}
-
-// 3 bipes: fim de bloco (Lá, 880Hz)
-function playEndBeep() {
+function playBeep() {
   if (!soundEnabled) return;
   initAudio();
-  [0, 0.2, 0.4].forEach(t => playTone(880, t, 0.15));
-}
-
-// 1 bipe mais grave: aviso de X min antes do fim (Mi, 659Hz)
-function playWarnBeep() {
-  if (!soundEnabled) return;
-  initAudio();
-  playTone(659, 0, 0.2);
+  
+  [0, 200, 400].forEach(delay => {
+    setTimeout(() => {
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      } catch(e) {}
+    }, delay);
+  });
 }
 
 const soundBtn = document.getElementById('toggle-sound');
-function paintSoundBtn() {
-  soundBtn.classList.toggle('active', soundEnabled);
-  soundBtn.textContent = soundEnabled ? '🔔 Bipes Ativados' : '🔕 Ativar bipes (Sinal Sonoro)';
-}
 soundBtn.addEventListener('click', () => {
   initAudio();
   soundEnabled = !soundEnabled;
-  store.set('sound_enabled', soundEnabled ? '1' : '0');
-  paintSoundBtn();
-  if (soundEnabled) playEndBeep(); // bipe de teste ao ativar
+  soundBtn.classList.toggle('active', soundEnabled);
+  soundBtn.textContent = soundEnabled ? '🔔 Bipes Ativados' : '🔕 Ativar bipes (Sinal Sonoro)';
+  if (soundEnabled) playBeep();
 });
-paintSoundBtn();
 
-// ===== Dados (para mudar um horário, edite só uma linha aqui) =====
-const WARN_MIN = 5; // avisa X minutos antes do fim de cada bloco
-
+// ===== Matérias e Tópicos =====
 const SUBJECTS = {
-  java: { name: 'Java & POO',       color: '#f59e0b' },
-  az:   { name: 'Azure (Cloud)',    color: '#38bdf8' },
-  bi:   { name: 'Power BI & Excel', color: '#84cc16' },
-  en:   { name: 'Inglês',           color: '#c084fc' }
+  java: { name: 'Java & POO',          color: '#f59e0b' },
+  db:   { name: 'Banco de Dados (SQL)',color: '#a855f7' },
+  az:   { name: 'Azure (Cloud)',       color: '#38bdf8' },
+  bi:   { name: 'Power BI & Excel',    color: '#84cc16' },
+  en:   { name: 'Inglês',              color: '#c084fc' }
 };
 
-// [início, fim, matéria, detalhes, título opcional]
 const DAYS = [
   { id: 'seg', label: 'Segunda', dow: 1, blocks: [
-    ['15:00','16:45','java','Foco principal: Lógica, POO, Spring Boot e projetos práticos.'],
-    ['17:00','18:30','az','Conceitos de nuvem, arquitetura e certificação.'],
-    ['18:45','20:00','en','Leitura de documentação, escuta (listening) e vocabulário técnico.']
+    ['15:00','16:45','java','Lógica, POO, Spring Boot e persistência de dados.'],
+    ['17:00','18:30','db','SQL relacional, modelagem, queries JOIN, GROUP BY e índices.'],
+    ['18:45','20:00','en','Leitura de documentação técnica, conversação e escuta.']
   ]},
   { id: 'ter', label: 'Terça', dow: 2, blocks: [
     ['15:00','16:45','bi','Modelagem de dados, DAX avançado e tratamento no Power Query.'],
@@ -168,30 +142,39 @@ const DAYS = [
     ['18:45','20:00','en','Prática de conversação, áudio e escrita técnica.']
   ]},
   { id: 'qua', label: 'Quarta', dow: 3, blocks: [
-    ['10:00','12:30','java','Foco em arquitetura, Spring Boot, APIs REST e lógica de backend.'],
-    ['14:00','16:30','az','Implantação de serviços, banco de dados na nuvem e certificação AZ-900/AZ-204.'],
-    ['17:00','18:15','bi','Análise de dados, consultas SQL avançadas e construção de dashboards.'],
-    ['18:15','19:30','en','Leitura de documentação técnica, conversação e áudio.']
+    ['10:00','12:30','java','Arquitetura de software, Spring Boot e APIs REST.'],
+    ['14:00','16:30','db','Modelagem conceitual/lógica, MySQL, DDL, DML e otimização de consultas.'],
+    ['17:00','18:15','az','Implantação de bancos gerenciados na nuvem e certificação Azure.'],
+    ['18:15','19:30','en','Leitura de documentação gringa e consumo de conteúdo nativo.']
   ]},
   { id: 'qui', label: 'Quinta', dow: 4, blocks: [
-    ['15:00','16:45','java','Estrutura de dados, manipulação de APIs e banco de dados.'],
-    ['17:00','18:30','az','Laboratórios práticos na plataforma e serviços de backend na nuvem.'],
-    ['18:45','20:00','en','Imersão em vídeos técnicos e artigos da comunidade gringa.']
+    ['15:00','16:45','java','Integração Java + Spring Data JPA + MySQL / Hibernate.'],
+    ['17:00','18:30','az','Laboratórios práticos, Azure App Services e bancos na nuvem.'],
+    ['18:45','20:00','en','Imersão em vídeos técnicos e artigos da comunidade.']
   ]},
   { id: 'sex', label: 'Sexta', dow: 5, blocks: [
-    ['10:00','12:30','bi','Modelagem de dados complexa, DAX, Power Query e relatórios executivos.'],
-    ['14:00','16:30','java','Projetos práticos do zero, testes unitários e refatoração de código.'],
-    ['17:00','18:15','az','Prática com Azure App Services, Docker e integração contínua.'],
-    ['18:15','19:30','en','Imersão em vídeos do YouTube, artigos do Medium e podcast técnico.']
+    ['10:00','12:30','bi','Modelagem de dados complexa, DAX, consultas SQL para BI e relatórios.'],
+    ['14:00','16:30','java','Desenvolvimento de projetos práticos, testes unitários e refatoração.'],
+    ['17:00','18:15','az','Azure App Services, Docker, CI/CD e conexão com banco de dados.'],
+    ['18:15','19:30','en','Imersão em podcasts, vídeos no YouTube e artigos técnicos.']
   ]},
   { id: 'sab', label: 'Sábado', dow: 6, blocks: [
-    ['08:30','11:30','java','Aplicação real juntando backend em Java e implantação na Azure.','Projeto Prático (Java + Azure)'],
-    ['13:30','15:30','bi','Projeto de portfólio integrando dados e visualizações profissionais.','Análise de Dados (Power BI)'],
+    ['08:30','11:30','java','Projeto Full-Stack / Backend: API Java + MySQL + Deploy na Azure.','Projeto Backend (Java + BD + Azure)'],
+    ['13:30','15:30','bi','Projeto de portfólio integrando banco de dados, Power BI e relatórios.','Análise de Dados (SQL + Power BI)'],
     ['15:45','16:45','en','Revisão semanal completa e prática sem tradução.','Inglês Immersion']
   ]}
 ];
 
-// ===== Datas: cada aba representa o dia real da semana atual (domingo abre a próxima semana) =====
+// ===== Armazenamento seguro =====
+const mem = {};
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return k in mem ? mem[k] : null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){ mem[k] = v; } },
+  del(k){ try { localStorage.removeItem(k); } catch(e){ delete mem[k]; } },
+  keys(){ try { return Object.keys(localStorage); } catch(e){ return Object.keys(mem); } }
+};
+
+// ===== Datas =====
 const realNow = new Date();
 const base = new Date(realNow);
 if (base.getDay() === 0) base.setDate(base.getDate() + 1);
@@ -214,11 +197,10 @@ DAYS.forEach(day => {
     const s = SUBJECTS[b[2]];
     return `<li class="item ${done.includes(i) ? 'done' : ''}" style="--c:${s.color}" data-start="${b[0]}" data-end="${b[1]}">
       <input type="checkbox" data-i="${i}" ${done.includes(i) ? 'checked' : ''} aria-label="Concluir ${b[4] || s.name}">
-      <div><span class="time">${b[0]} - ${b[1]}<span class="badge">agora</span><span class="badge-soon">faltam ${WARN_MIN} min</span></span>
+      <div><span class="time">${b[0]} - ${b[1]}<span class="badge">agora</span></span>
       <span class="topic">${b[4] || s.name}</span><span class="details">${b[3]}</span></div></li>`;
   }).join('');
 
-  // migra a nota antiga (por dia da semana) para a chave por data, uma única vez
   const old = store.get('note_' + day.id);
   if (old !== null && store.get('note_' + day.date) === null) { store.set('note_' + day.date, old); store.del('note_' + day.id); }
   const note = store.get('note_' + day.date) || '';
@@ -258,7 +240,7 @@ tabsEl.addEventListener('keydown', e => {
   else if (e.key === 'ArrowLeft') show(ids[(cur + ids.length - 1) % ids.length], true);
 });
 
-// ===== Progresso, bloco atual/próximo do fim, e bipes =====
+// ===== Progresso e Bipe Sonoro =====
 function updateProgress(panel) {
   const boxes = panel.querySelectorAll('input[type=checkbox]');
   const n = [...boxes].filter(b => b.checked).length;
@@ -266,9 +248,7 @@ function updateProgress(panel) {
   panel.querySelector('.bar i').style.width = (n / boxes.length * 100) + '%';
 }
 
-const alertedEnd = new Set();
-const alertedWarn = new Set();
-const msg = document.getElementById('msg');
+const alertedBlocks = new Set();
 
 function paintNow() {
   const d = new Date(), min = d.getHours()*60 + d.getMinutes();
@@ -279,25 +259,16 @@ function paintNow() {
       const s = toMin(li.dataset.start), e = toMin(li.dataset.end);
       const isNow = min >= s && min < e;
       const isPast = min >= e;
-      const isSoon = isNow && (e - min) <= WARN_MIN && (e - min) > 0;
-
+      
       li.classList.toggle('now', isNow);
       li.classList.toggle('past', isPast);
-      li.classList.toggle('soon', isSoon);
 
-      const topic = li.querySelector('.topic').textContent;
-      const warnId = `${day.date}_${li.dataset.end}_warn`;
-      const endId = `${day.date}_${li.dataset.end}_end`;
-
-      if (isSoon && !alertedWarn.has(warnId)) {
-        alertedWarn.add(warnId);
-        playWarnBeep();
-        msg.textContent = `⏳ Faltam ${WARN_MIN} min para o fim de: ${topic}`;
-      }
-      if (min === e && !alertedEnd.has(endId)) {
-        alertedEnd.add(endId);
-        playEndBeep();
-        msg.textContent = `⏰ Tempo esgotado para: ${topic}!`;
+      const blockId = `${day.date}_${li.dataset.end}`;
+      if (min === e && !alertedBlocks.has(blockId)) {
+        alertedBlocks.add(blockId);
+        playBeep();
+        const topic = li.querySelector('.topic').textContent;
+        document.getElementById('msg').textContent = `⏰ Tempo esgotado para: ${topic}!`;
       }
     });
   });
@@ -314,7 +285,6 @@ DAYS.forEach(day => {
   });
   updateProgress(panel);
 
-  // notas com debounce
   const ta = panel.querySelector('textarea'), status = panel.querySelector('.save-status');
   let t;
   ta.addEventListener('input', () => {
@@ -323,8 +293,9 @@ DAYS.forEach(day => {
     t = setTimeout(() => { store.set('note_' + day.date, ta.value); status.textContent = 'Salvo automaticamente'; }, 400);
   });
 });
+
 paintNow();
-setInterval(paintNow, 10000); // checa a cada 10s para não perder o minuto exato do aviso/fim
+setInterval(paintNow, 10000);
 
 // ===== Resumo semanal =====
 const totals = {};
@@ -334,16 +305,17 @@ document.getElementById('week').innerHTML = Object.keys(SUBJECTS).map(k => {
   return `<li style="--c:${SUBJECTS[k].color}"><b>${Math.floor(m/60)}h${m%60 ? String(m%60).padStart(2,'0') : ''}</b>${SUBJECTS[k].name}</li>`;
 }).join('');
 
-// ===== Backup (exportar/importar notas, checklists e preferência de som) =====
+// ===== Backup =====
+const msg = document.getElementById('msg');
 document.getElementById('export').addEventListener('click', () => {
   const data = {};
-  store.keys().filter(k => /^(note|done)_/.test(k) || k === 'sound_enabled').forEach(k => data[k] = store.get(k));
+  store.keys().filter(k => /^(note|done)_/.test(k)).forEach(k => data[k] = store.get(k));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   a.download = `agenda-backup-${todayStr}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
-  msg.textContent = 'Backup exportado.';
+  msg.textContent = 'Backup exportado com sucesso!';
 });
 document.getElementById('import').addEventListener('click', () => document.getElementById('file').click());
 document.getElementById('file').addEventListener('change', e => {
@@ -351,13 +323,13 @@ document.getElementById('file').addEventListener('change', e => {
   if (!f) return;
   f.text().then(txt => {
     const data = JSON.parse(txt);
-    Object.keys(data).filter(k => /^(note|done)_/.test(k) || k === 'sound_enabled').forEach(k => store.set(k, String(data[k])));
+    Object.keys(data).filter(k => /^(note|done)_/.test(k)).forEach(k => store.set(k, String(data[k])));
     msg.textContent = 'Backup importado. Recarregando...';
     setTimeout(() => location.reload(), 600);
   }).catch(() => { msg.textContent = 'Arquivo inválido. Use um backup exportado por esta página.'; });
 });
 
-// ===== Aba inicial: hash da URL > dia de hoje > segunda =====
+// ===== Aba inicial =====
 const hash = location.hash.slice(1);
 const todayDay = DAYS.find(d => d.date === todayStr);
 show(DAYS.some(d => d.id === hash) ? hash : (todayDay ? todayDay.id : 'seg'));
